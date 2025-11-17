@@ -1,10 +1,14 @@
 FROM alpine:edge AS builder
 
-LABEL maintainer="Yury Muski <muski.yury@gmail.com>"
+LABEL maintainer="Danila Vershinin <dvershinin@users.noreply.github.com>"
 
 WORKDIR /opt
 
-RUN apk add --no-cache build-base git autoconf libpsl-dev libtool cmake go curl nghttp2-dev zlib-dev automake rustup && rustup-init -y -q
+RUN apk add --no-cache build-base git autoconf libpsl-dev libtool cmake go curl nghttp2-dev zlib-dev automake rustup clang lld ninja pkgconf python3 linux-headers && rustup-init -y -q
+
+# Prefer clang toolchain for BoringSSL/quiche on all arches (including arm64)
+ENV CC=clang
+ENV CXX=g++
 
 COPY _dl/quiche.tar.gz /opt/quiche.tar.gz
 COPY _dl/curl.tar.gz /opt/curl.tar.gz
@@ -13,7 +17,7 @@ RUN mkdir -p /opt/quiche-src && \
     tar -xzf /opt/quiche.tar.gz -C /opt/quiche-src --strip-components=1 && \
     rm /opt/quiche.tar.gz
 RUN cd /opt/quiche-src && \
-    PATH="$HOME/.cargo/bin:$PATH" cargo build --package quiche --release --features ffi,pkg-config-meta,qlog && \
+    RUST_BACKTRACE=1 PATH="$HOME/.cargo/bin:$PATH" cargo build -vv --package quiche --release --features ffi,pkg-config-meta,qlog --jobs $(nproc) && \
     mkdir -p quiche/deps/boringssl/src/lib && \
     ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) quiche/deps/boringssl/src/lib/
 
@@ -35,4 +39,4 @@ WORKDIR /opt
 COPY _dl/httpstat.sh /opt/httpstat.sh
 RUN chmod +x /opt/httpstat.sh
 
-CMD ["curl"]
+ENTRYPOINT ["curl"]
