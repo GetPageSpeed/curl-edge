@@ -8,6 +8,12 @@ on:
       - '**/README.md'
     tags:
       - '*'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push image to Docker Hub'
+        type: boolean
+        default: false
 
 jobs:
 
@@ -20,19 +26,108 @@ jobs:
       - name: Inject slug/short variables
         uses: rlespinasse/github-slug-action@v4.x
 
+      - name: Get curl version
+        id: curlver
+        uses: dvershinin/lastversion-action@v0.0.3
+        with:
+          repository: 'https://github.com/curl/curl'
+          output_format: 'version'
+
+      - name: Resolve tags
+        run: |
+          set -euo pipefail
+          CURL_VERSION="${{ steps.curlver.outputs.last_version }}"
+          CURL_TAG="curl-${CURL_VERSION//./_}"
+          # determine latest quiche semver tag (v-prefixed or plain), choose highest
+          QUICHE_VERSION="$(
+            git ls-remote --tags https://github.com/cloudflare/quiche \
+              | awk -F'refs/tags/' '/refs\/tags\/v?[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ {gsub(/\^\{\}/,"",$2); gsub(/^v/,"",$2); print $2}' \
+              | sort -V | tail -n1
+          )"
+          if git ls-remote --tags https://github.com/cloudflare/quiche "refs/tags/v${QUICHE_VERSION}" | grep -q "refs/tags/v${QUICHE_VERSION}$"; then
+            QUICHE_REF="v${QUICHE_VERSION}"
+          else
+            QUICHE_REF="${QUICHE_VERSION}"
+          fi
+          echo "CURL_VERSION=${CURL_VERSION}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${CURL_VERSION}" >> $GITHUB_ENV
+          echo "CURL_TAG=${CURL_TAG}" >> $GITHUB_ENV
+          echo "QUICHE_REF=${QUICHE_REF}" >> $GITHUB_ENV
+
+      - name: Prepare sources (git shallow clone + tar)
+        run: |
+          set -euo pipefail
+          rm -rf src _dl
+          mkdir -p src _dl
+          git clone --depth 1 --branch "${CURL_TAG}" https://github.com/curl/curl src/curl-src
+          git clone --filter=blob:none --recurse-submodules --shallow-submodules https://github.com/cloudflare/quiche src/quiche-src
+          git -C src/quiche-src fetch --tags --depth 1 origin "refs/tags/${QUICHE_REF}:refs/tags/${QUICHE_REF}"
+          git -C src/quiche-src checkout -q "refs/tags/${QUICHE_REF}"
+          git -C src/quiche-src submodule update --init --recursive --depth 1
+          tar -czf _dl/curl.tar.gz -C src curl-src
+          tar -czf _dl/quiche.tar.gz -C src quiche-src
+          curl -fL "https://raw.githubusercontent.com/b4b4r07/httpstat/master/httpstat.sh" -o _dl/httpstat.sh
+
       - name: Login to Docker Hub
+        if: inputs.push == true || github.event_name == 'push'
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set up QEMU
+        if: inputs.push == true || github.event_name == 'push'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64
+
       - name: Set up Docker Buildx
+        if: inputs.push == true || github.event_name == 'push'
         uses: docker/setup-buildx-action@v2
 
-      - name: Build and push
+      - name: Build (no push) via docker build (act)
+        if: inputs.push != true && github.event_name != 'push' && env.ACT == 'true'
+        run: |
+          DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --load \
+            -t curl-http3:${IMAGE_TAG} -t curl-http3:latest .
+
+      - name: Build (no push)
+        if: inputs.push != true && github.event_name != 'push' && env.ACT != 'true'
         uses: docker/build-push-action@v4
         with:
-          push: true
+          context: .
+          push: false
+          platforms: linux/amd64
+          load: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GITHUB_REPOSITORY_NAME_PART }}:${{ env.GITHUB_REF_SLUG }}
+            curl-http3:${{ env.IMAGE_TAG }}
+            curl-http3:latest
+
+      - name: Test curl -V
+        if: inputs.push != true && github.event_name != 'push'
+        run: docker run --rm curl-http3:${IMAGE_TAG} curl -V
+
+      - name: Test HTTP/3 to Cloudflare
+        if: inputs.push != true && github.event_name != 'push'
+        run: |
+          docker run --rm --network host curl-http3:${IMAGE_TAG} \
+            curl -I --http3 https://cloudflare-quic.com/ || \
+          docker run --rm --network host curl-http3:${IMAGE_TAG} \
+            curl -I --http3 https://www.cloudflare.com/ --connect-timeout 10 || true
+
+      - name: Test httpstat script
+        if: inputs.push != true && github.event_name != 'push'
+        run: |
+          docker run --rm --network host curl-http3:${IMAGE_TAG} \
+            /opt/httpstat.sh -I --http3 https://cloudflare-quic.com/ || true
+
+      - name: Build and push
+        if: inputs.push == true || github.event_name == 'push'
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GITHUB_REPOSITORY_NAME_PART }}:${{ env.IMAGE_TAG }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GITHUB_REPOSITORY_NAME_PART }}:latest
