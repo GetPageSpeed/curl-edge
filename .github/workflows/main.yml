@@ -135,7 +135,6 @@ jobs:
           cache-to: type=gha,mode=max
           tags: |
             getpagespeed/curl-edge:amd64-${{ env.IMAGE_TAG }}
-            getpagespeed/curl-edge:latest-amd64
 
       - name: Build and push (nightly, arm64 only)
         if: github.event_name == 'schedule'
@@ -148,7 +147,6 @@ jobs:
           cache-to: type=gha,mode=max
           tags: |
             getpagespeed/curl-edge:arm64-${{ env.IMAGE_TAG }}
-            getpagespeed/curl-edge:latest-arm64
 
       - name: Create multi-arch manifest (nightly)
         if: github.event_name == 'schedule'
