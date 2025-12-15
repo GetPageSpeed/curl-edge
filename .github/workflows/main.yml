@@ -69,7 +69,7 @@ jobs:
           git -C src/quiche-src submodule update --init --recursive --depth 1
           tar -czf _dl/curl.tar.gz -C src curl-src
           tar -czf _dl/quiche.tar.gz -C src quiche-src
-          curl -fL "https://raw.githubusercontent.com/babarot/httpstat/main/httpstat" -o _dl/httpstat.sh
+          cp httpstat.sh _dl/httpstat.sh
 
       - name: Login to Docker Hub
         if: inputs.push == true || github.event_name == 'push' || github.event_name == 'schedule'
