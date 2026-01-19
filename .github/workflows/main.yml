@@ -124,8 +124,8 @@ jobs:
           docker run --rm --network host curl-edge:${IMAGE_TAG} \
             /opt/httpstat.sh -I --http3 https://cloudflare-quic.com/ || true
 
-      - name: Build and push (push/dispatch, amd64 only)
-        if: inputs.push == true || github.event_name == 'push'
+      - name: Build and push (amd64 only)
+        if: inputs.push == true || github.event_name == 'push' || github.event_name == 'schedule'
         uses: docker/build-push-action@v4
         with:
           context: .
