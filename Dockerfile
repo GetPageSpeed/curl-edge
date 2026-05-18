@@ -21,7 +21,9 @@ RUN mkdir -p /opt/quiche-src && \
 RUN cd /opt/quiche-src && \
     RUST_BACKTRACE=1 PATH="$HOME/.cargo/bin:$PATH" RUSTFLAGS="-C target-feature=-crt-static" cargo build -vv --package quiche --release --features ffi,pkg-config-meta,qlog --jobs $(nproc) && \
     mkdir -p quiche/deps/boringssl/src/lib && \
-    ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) quiche/deps/boringssl/src/lib/
+    ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) quiche/deps/boringssl/src/lib/ && \
+    BORING_INC=$(find target/release/build -type d -path "*/boring-sys-*/out/boringssl/include" | head -1) && \
+    ln -vnsfT "$BORING_INC" quiche/deps/boringssl/src/include
 
 RUN mkdir -p /opt/curl-src && \
     tar -xzf /opt/curl.tar.gz -C /opt/curl-src --strip-components=1 && \
