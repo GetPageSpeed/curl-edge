@@ -19,7 +19,7 @@ RUN mkdir -p /opt/quiche-src && \
     tar -xzf /opt/quiche.tar.gz -C /opt/quiche-src --strip-components=1 && \
     rm /opt/quiche.tar.gz
 RUN cd /opt/quiche-src && \
-    RUST_BACKTRACE=1 PATH="$HOME/.cargo/bin:$PATH" cargo build -vv --package quiche --release --features ffi,pkg-config-meta,qlog --jobs $(nproc) && \
+    RUST_BACKTRACE=1 PATH="$HOME/.cargo/bin:$PATH" RUSTFLAGS="-C target-feature=-crt-static" cargo build -vv --package quiche --release --features ffi,pkg-config-meta,qlog --jobs $(nproc) && \
     mkdir -p quiche/deps/boringssl/src/lib && \
     ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) quiche/deps/boringssl/src/lib/
 
