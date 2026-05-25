@@ -32,9 +32,14 @@ RUN mkdir -p /opt/curl-src && \
     rm /opt/curl.tar.gz
 RUN cd /opt/curl-src && \
     autoreconf -fi && \
-    ./configure LDFLAGS="-Wl,-rpath,/opt/quiche-src/target/release" --with-openssl=/opt/quiche-src/quiche/deps/boringssl/src --with-quiche=/opt/quiche-src/target/release --with-nghttp2 --with-zlib && \
+    ./configure LDFLAGS="-Wl,-rpath,/usr/local/lib" --with-openssl=/opt/quiche-src/quiche/deps/boringssl/src --with-quiche=/opt/quiche-src/target/release --with-nghttp2 --with-zlib && \
     make -j $(nproc) && \
-    make DESTDIR="/curl/" install
+    make DESTDIR="/curl/" install && \
+    # libcurl.so.4 dynamically NEEDs libquiche.so.0; ship it into the runtime
+    # image (only /curl/usr/local is copied to the final stage) and point the
+    # rpath above at /usr/local/lib so the loader finds it there.
+    install -D -m755 /opt/quiche-src/target/release/libquiche.so /curl/usr/local/lib/libquiche.so.0 && \
+    ln -sf libquiche.so.0 /curl/usr/local/lib/libquiche.so
 
 FROM alpine:edge
 RUN apk add --no-cache nghttp2 zlib libpsl bash perl ca-certificates
