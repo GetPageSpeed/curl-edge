@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Empty commit if last commit > 50 days
         run: |
           set -euo pipefail
@@ -43,7 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
+
+      - name: Test workflow invariants
+        run: ./tests/test-ci-workflow.sh
 
       - name: Inject slug/short variables
         uses: rlespinasse/github-slug-action@v4.x
@@ -76,10 +79,12 @@ jobs:
           else
             QUICHE_REF="${QUICHE_VERSION}"
           fi
-          echo "CURL_VERSION=${CURL_VERSION}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${CURL_VERSION}" >> $GITHUB_ENV
-          echo "CURL_TAG=${CURL_TAG}" >> $GITHUB_ENV
-          echo "QUICHE_REF=${QUICHE_REF}" >> $GITHUB_ENV
+          {
+            echo "CURL_VERSION=${CURL_VERSION}"
+            echo "IMAGE_TAG=${CURL_VERSION}"
+            echo "CURL_TAG=${CURL_TAG}"
+            echo "QUICHE_REF=${QUICHE_REF}"
+          } >> "$GITHUB_ENV"
 
       - name: Prepare sources (git shallow clone + tar)
         run: |
@@ -97,30 +102,30 @@ jobs:
 
       - name: Login to Docker Hub
         if: inputs.push == true || github.event_name == 'push' || github.event_name == 'schedule'
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up QEMU
         if: github.event_name == 'schedule'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: linux/arm64
 
       - name: Set up Docker Buildx
         if: inputs.push == true || github.event_name == 'push' || github.event_name == 'schedule'
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Build (no push) via docker build (act)
         if: inputs.push != true && github.event_name != 'push' && env.ACT == 'true'
         run: |
           DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --load \
-            -t curl-edge:${IMAGE_TAG} -t curl-edge:latest .
+            -t "curl-edge:${IMAGE_TAG}" -t curl-edge:latest .
 
       - name: Build (no push)
         if: inputs.push != true && github.event_name != 'push' && env.ACT != 'true'
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -132,43 +137,43 @@ jobs:
 
       - name: Test curl -V
         if: inputs.push != true && github.event_name != 'push'
-        run: docker run --rm curl-edge:${IMAGE_TAG} -V
+        run: docker run --rm "curl-edge:${IMAGE_TAG}" -V
 
       - name: Test HTTP/3 to Cloudflare
         if: inputs.push != true && github.event_name != 'push'
         run: |
-          docker run --rm --network host curl-edge:${IMAGE_TAG} \
+          docker run --rm --network host "curl-edge:${IMAGE_TAG}" \
             -I --http3 https://cloudflare-quic.com/ || \
-          docker run --rm --network host curl-edge:${IMAGE_TAG} \
+          docker run --rm --network host "curl-edge:${IMAGE_TAG}" \
             -I --http3 https://www.cloudflare.com/ --connect-timeout 10 || true
 
       - name: Test httpstat script
         if: inputs.push != true && github.event_name != 'push'
         run: |
-          docker run --rm --network host curl-edge:${IMAGE_TAG} \
+          docker run --rm --network host "curl-edge:${IMAGE_TAG}" \
             /opt/httpstat.sh -I --http3 https://cloudflare-quic.com/ || true
 
       - name: Build and push (amd64 only)
         if: inputs.push == true || github.event_name == 'push' || github.event_name == 'schedule'
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=curl-edge-amd64
+          cache-to: type=gha,scope=curl-edge-amd64,mode=max,ignore-error=true
           tags: |
             getpagespeed/curl-edge:amd64-${{ env.IMAGE_TAG }}
 
       - name: Build and push (nightly, arm64 only)
         if: github.event_name == 'schedule'
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=curl-edge-arm64
+          cache-to: type=gha,scope=curl-edge-arm64,mode=max,ignore-error=true
           tags: |
             getpagespeed/curl-edge:arm64-${{ env.IMAGE_TAG }}
 
@@ -176,7 +181,7 @@ jobs:
         if: github.event_name == 'schedule'
         run: |
           docker buildx imagetools create \
-            -t getpagespeed/curl-edge:${IMAGE_TAG} \
+            -t "getpagespeed/curl-edge:${IMAGE_TAG}" \
             -t getpagespeed/curl-edge:latest \
-            getpagespeed/curl-edge:amd64-${IMAGE_TAG} \
-            getpagespeed/curl-edge:arm64-${IMAGE_TAG}
+            "getpagespeed/curl-edge:amd64-${IMAGE_TAG}" \
+            "getpagespeed/curl-edge:arm64-${IMAGE_TAG}"
