@@ -4,13 +4,14 @@ LABEL maintainer="Danila Vershinin <dvershinin@users.noreply.github.com>"
 
 WORKDIR /opt
 
-RUN apk add --no-cache build-base git autoconf libpsl-dev libtool cmake go curl nghttp2-dev zlib-dev automake rustup clang clang-dev clang-libclang lld ninja pkgconf python3 linux-headers && rustup-init -y -q
+RUN apk add --no-cache build-base git autoconf libpsl-dev libtool cmake go curl nghttp2-dev zlib-dev automake rustup clang clang-dev clang-libclang libc++-dev llvm-libunwind-dev lld ninja pkgconf python3 linux-headers && rustup-init -y -q
 
 ENV LIBCLANG_PATH=/usr/lib
 
 # Prefer clang toolchain for BoringSSL/quiche on all arches (including arm64)
 ENV CC=clang
-ENV CXX=g++
+ENV CXX=clang++
+ENV CXXFLAGS=-stdlib=libc++
 
 COPY _dl/quiche.tar.gz /opt/quiche.tar.gz
 COPY _dl/curl.tar.gz /opt/curl.tar.gz
