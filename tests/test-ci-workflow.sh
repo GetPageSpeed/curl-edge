@@ -24,9 +24,10 @@ if ! grep -Fxq 'ENV CXX=clang++' "$dockerfile"; then
     echo "BoringSSL must use clang++ for its C++ compiler flags" >&2
     exit 1
 fi
-if ! grep -Fxq 'ENV CXXFLAGS=-stdlib=libc++' "$dockerfile" || \
-   ! grep -Fq 'libc++-dev llvm-libunwind-dev' "$dockerfile"; then
-    echo "BoringSSL needs Alpine's libc++ headers and unwind library" >&2
+if ! grep -Fq 'CXXFLAGS="-isystem $(dirname "$(dirname "$(find /usr/include/c++ -name c++config.h -print -quit)")")"' "$dockerfile" || \
+   ! grep -Fq 'libpsl libstdc++ bash' "$dockerfile" || \
+   ! grep -Fq 'LIBS="-lstdc++"' "$dockerfile"; then
+    echo "Clang must use Alpine's libstdc++ headers and runtime" >&2
     exit 1
 fi
 
